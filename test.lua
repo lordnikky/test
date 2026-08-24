@@ -1,7 +1,10 @@
 local t = {}
 local old
-old = hookmetamethod(t, "__index", function(self, key)
-    print("index:", key)
-    return old and old(self, key) or nil
+old = hookmetamethod(t, "__newindex", function(self, key, value)
+    print("newindex:", key, "=", value)
+    if key ~= "blocked" then
+        old(self, key, value)
+    end
 end)
+t.hello = "world"
 print(t.hello)
