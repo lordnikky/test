@@ -1,3 +1,4 @@
+local t = {}
 local old
 old = hookmetamethod(t, "__newindex", function(self, key, value)
     print("newindex:", key, "=", value)
