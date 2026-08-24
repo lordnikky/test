@@ -7,4 +7,4 @@ old = hookmetamethod(t, "__newindex", function(self, key, value)
     end
 end)
 t.hello = "world"
-print(t.hello)
+print(t.hello)   -- should print "world"
