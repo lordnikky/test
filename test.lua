@@ -1,21 +1,25 @@
-print("=== hookfunction test ===")
-_G.original = function(x) return x + 1 end
-local old = hookfunction(_G.original, function(x)
-    return old(x) * 10
-end)
-print("original(5) after hook:", _G.original(5))   -- expect 60
-print("old(5):", old(5))                            -- expect 6
+loadstring([[
+local function original(x)
+    return x + 1
+end
 
-print("=== restorefunction test ===")
-local ok = restorefunction(_G.original)
-print("restore ok:", ok)
-print("original(5) after restore:", _G.original(5)) -- expect 6
+local function hook(x)
+    return original(x) * 10
+end
 
-print("=== hookmetamethod test (on game) ===")
-local old_meta = hookmetamethod(game, "__index", function(self, key)
-    if key == "__FIU_TEST_KEY__" then
+local old = hookfunction(original, hook)
+print("original(5):", original(5))  -- 60
+print("old(5):", old(5))            -- 6
+
+print("restore:", restorefunction(original), original(5))  -- true, 6
+
+local t = {}
+local oldmm = hookmetamethod(t, "__index", function(self, key)
+    if key == "secret" then
         return "hooked"
     end
-    return old_meta(self, key)
+    return oldmm(self, key)
 end)
-print("game.__FIU_TEST_KEY__:", game.__FIU_TEST_KEY__)  -- expect hooked
+print("t.secret:", t.secret)    -- hooked
+print("t.nothing:", t.nothing)  -- nil
+]])()
