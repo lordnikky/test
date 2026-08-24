@@ -1,4 +1,4 @@
-oadstring([[
+loadstring([[
 -- STEP 1: what the hookmetamethod test leaves behind
 local old
 old = hookmetamethod(game, "__index", function(self, key)
