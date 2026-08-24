@@ -1,7 +1,8 @@
 loadstring([[
 -- __newindex
 local t = {}
-local old = hookmetamethod(t, "__newindex", function(self, key, value)
+local old
+old = hookmetamethod(t, "__newindex", function(self, key, value)
     print("newindex:", key, "=", value)
     if key ~= "blocked" then
         old(self, key, value)
@@ -9,21 +10,21 @@ local old = hookmetamethod(t, "__newindex", function(self, key, value)
 end)
 t.hello = "world"
 print("t.hello:", t.hello)     -- world
-t.blocked = "nope"             -- hook sees it, blocks the write
+t.blocked = "nope"
 print("t.blocked:", t.blocked) -- nil
-hookmetamethod(t, "__newindex", nil)  -- unhook
+hookmetamethod(t, "__newindex", nil)
 
 -- __namecall on game
-local oldnc = hookmetamethod(game, "__namecall", function(self, ...)
+local oldnc
+oldnc = hookmetamethod(game, "__namecall", function(self, ...)
     local m = getnamecallmethod()
     if m == "GetService" then
         print("namecall: GetService")
     end
     return oldnc(self, ...)
 end)
-print(game:GetService("Players").ClassName)  -- Players
+print(game:GetService("Players").ClassName)
 
--- cleanup
 hookmetamethod(game, "__namecall", nil)
 print("ALL DONE")
 ]])()
