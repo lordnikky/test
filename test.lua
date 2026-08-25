@@ -1,3 +1,4 @@
+print("hello")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ClientStatCache = require(ReplicatedStorage.ClientStatCache)
 local BeequipFile = require(ReplicatedStorage.Beequips.BeequipFile)
