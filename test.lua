@@ -137,3 +137,4 @@ if success and menuScript then
 end
 
 print("SUCCESS! Generated " .. GlobalIndex .. " items across 3 types.")
+print("hello")
