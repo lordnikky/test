@@ -8,6 +8,7 @@ local terrain = workspace.Terrain
 local canWriteFiles  = writefile  ~= nil
 local canAppendFiles = appendfile ~= nil
 local hasTask        = task       ~= nil
+local useNativeTerrain = terrainEncodeChunk ~= nil
 
 local CONFIG = {
     ChunkSize = 64,
@@ -18,13 +19,18 @@ local CONFIG = {
     Noclip       = true,
     FlushEveryLines = 50,
     OutputName      = "MapDump_" .. os.time(),
+    -- Skips re-encoding chunks the native helper confirmed are 100% air
+    -- (only affects the native path; no data is ever lost).
+    SkipAirChunks = true,
+    -- Visual per-chunk markers. Disable for a small extra speed boost.
+    ShowMarkers   = true,
 }
 
 local CHUNK           = CONFIG.ChunkSize
 local VOXELS_PER_AXIS = CHUNK / 4
 local GRAB_HALF       = 384
 local SAMPLE_STEP     = 128
-local DRAIN_PER_FRAME = 12
+local DRAIN_PER_FRAME = 32
 local MAX_QUEUE       = 40000
 local MAX_RETRIES     = 5
 
@@ -48,12 +54,17 @@ local queueHead          = 1
 local inQueue            = {}
 local retryCount         = {}
 
+local floor   = math.floor
+local concat  = table.concat
+local insert  = table.insert
+local format  = string.format
+
 local function snap(value, grid)
-    return math.floor(value / grid) * grid
+    return floor(value / grid) * grid
 end
 
 local function c3(color)
-    return string.format("Color3.new(%.6f, %.6f, %.6f)", color.R, color.G, color.B)
+    return format("Color3.new(%.6f, %.6f, %.6f)", color.R, color.G, color.B)
 end
 
 local function newFolder(parent, name)
@@ -75,13 +86,13 @@ local function getLightingHeader()
     s[#s + 1] = "local L = game.Lighting"
     s[#s + 1] = "L.Ambient = " .. c3(L.Ambient)
     s[#s + 1] = "L.OutdoorAmbient = " .. c3(L.OutdoorAmbient)
-    s[#s + 1] = string.format("L.Brightness = %.2f", L.Brightness)
-    s[#s + 1] = string.format("L.ClockTime = %.2f", L.ClockTime)
+    s[#s + 1] = format("L.Brightness = %.2f", L.Brightness)
+    s[#s + 1] = format("L.ClockTime = %.2f", L.ClockTime)
     s[#s + 1] = "L.FogColor = " .. c3(L.FogColor)
-    s[#s + 1] = string.format("L.FogEnd = %.2f", L.FogEnd)
-    s[#s + 1] = string.format("L.FogStart = %.2f", L.FogStart)
+    s[#s + 1] = format("L.FogEnd = %.2f", L.FogEnd)
+    s[#s + 1] = format("L.FogStart = %.2f", L.FogStart)
     s[#s + 1] = "L.GlobalShadows = " .. tostring(L.GlobalShadows)
-    return table.concat(s, "\n")
+    return concat(s, "\n")
 end
 
 local function getRestoreHeader()
@@ -97,13 +108,13 @@ local function getRestoreHeader()
     end
 
     parts[#parts + 1] = "T.WaterColor = " .. c3(terrain.WaterColor)
-    parts[#parts + 1] = string.format("T.WaterTransparency = %.4f", terrain.WaterTransparency)
-    parts[#parts + 1] = string.format("T.WaterWaveSize = %.4f", terrain.WaterWaveSize)
-    parts[#parts + 1] = string.format("T.WaterWaveSpeed = %.4f", terrain.WaterWaveSpeed)
-    parts[#parts + 1] = string.format("T.WaterReflectance = %.4f", terrain.WaterReflectance)
+    parts[#parts + 1] = format("T.WaterTransparency = %.4f", terrain.WaterTransparency)
+    parts[#parts + 1] = format("T.WaterWaveSize = %.4f", terrain.WaterWaveSize)
+    parts[#parts + 1] = format("T.WaterWaveSpeed = %.4f", terrain.WaterWaveSpeed)
+    parts[#parts + 1] = format("T.WaterReflectance = %.4f", terrain.WaterReflectance)
     parts[#parts + 1] = ""
 
-    parts[#parts + 1] = string.format([====[
+    parts[#parts + 1] = format([====[
 local N = %d
 
 local function expand(rle, dst)
@@ -151,14 +162,14 @@ local function C(x, y, z, mRLE, oRLE, wRLE)
 end
 ]====], VOXELS_PER_AXIS, CHUNK, CHUNK, CHUNK)
 
-    return table.concat(parts, "\n")
+    return concat(parts, "\n")
 end
 
 local function flushBuffer()
     if lineCount == 0 then return true end
     if not canWriteFiles then return false end
 
-    local content = table.concat(outputLines, "\n", 1, lineCount)
+    local content = concat(outputLines, "\n", 1, lineCount)
     local success = false
 
     for attempt = 1, 3 do
@@ -214,7 +225,7 @@ local function rleEncode(values, n)
     end
     p = p + 1; out[p] = current
     p = p + 1; out[p] = count
-    return table.concat(out, ",", 1, p)
+    return concat(out, ",", 1, p)
 end
 
 local function readChunkChannels(region)
@@ -242,7 +253,6 @@ local function encodeChunk(x, y, z)
 
     local N = VOXELS_PER_AXIS
     local total = N * N * N
-    local floor = math.floor
     local AIR = Enum.Material.Air
 
     local mF, oF, wF = {}, {}, {}
@@ -275,7 +285,7 @@ local function encodeChunk(x, y, z)
     local oStr = rleEncode(oF, total)
     local wStr = rleEncode(wF, total)
 
-    return string.format("C(%d,%d,%d,{%s},{%s},{%s})", x, y, z, mStr, oStr, wStr)
+    return format("C(%d,%d,%d,{%s},{%s},{%s})", x, y, z, mStr, oStr, wStr)
 end
 
 local function processFoundInstance(inst)
@@ -320,7 +330,7 @@ end
 
 local function enqueueAround(pos)
     if not CONFIG.SaveTerrain then return end
-    local steps = math.floor(GRAB_HALF / CHUNK)
+    local steps = floor(GRAB_HALF / CHUNK)
     local cx = snap(pos.X, CHUNK)
     local cy = snap(pos.Y, CHUNK)
     local cz = snap(pos.Z, CHUNK)
@@ -341,7 +351,7 @@ local function clearChunk(x, y, z)
 end
 
 local function spawnMarker(x, y, z)
-    if not markerFolder then return end
+    if not CONFIG.ShowMarkers or not markerFolder then return end
     local marker = Instance.new("Part")
     marker.Name = "SavedChunkMarker"
     marker.Anchored = true
@@ -355,89 +365,68 @@ local function spawnMarker(x, y, z)
     marker.Parent = markerFolder
 end
 
+-- Process one queued chunk. Returns true when work was done.
+local function processChunk(c)
+    local key = c[1] .. "," .. c[2] .. "," .. c[3]
+    inQueue[key] = nil
+
+    if useNativeTerrain then
+        -- Native path: encode is done in the executor's VM. The helper returns
+        -- (line, empty): line = save line, empty = confirmed all-air, and
+        -- nil/false = terrain not loaded (retry).
+        local line, empty = terrainEncodeChunk(c[1], c[2], c[3], CHUNK)
+        if line then
+            savedChunks[key] = true
+            addLine(line)
+            totalChunksSaved = totalChunksSaved + 1
+            retryCount[key] = nil
+            spawnMarker(c[1], c[2], c[3])
+        elseif empty then
+            if CONFIG.SkipAirChunks then
+                savedChunks[key] = true
+                retryCount[key] = nil
+            end
+        else
+            local n = retryCount[key] or 0
+            if n < MAX_RETRIES then
+                retryCount[key] = n + 1
+                pendingQueue[#pendingQueue + 1] = c
+                inQueue[key] = true
+            end
+        end
+        return true
+    end
+
+    -- Fallback path (original behavior): probe then encode in FIU.
+    local probeRegion = Region3.new(
+        Vector3.new(c[1] + CHUNK/2, c[2] + CHUNK/2, c[3] + CHUNK/2),
+        Vector3.new(c[1] + CHUNK/2 + 4, c[2] + CHUNK/2 + 4, c[3] + CHUNK/2 + 4)
+    )
+    local ok = pcall(function() return terrain:ReadVoxels(probeRegion, 4) end)
+    if not ok then
+        pendingQueue[#pendingQueue + 1] = c
+        inQueue[key] = true
+    else
+        local line = encodeChunk(c[1], c[2], c[3])
+        if line then
+            savedChunks[key] = true
+            addLine(line)
+            totalChunksSaved = totalChunksSaved + 1
+            retryCount[key] = nil
+            spawnMarker(c[1], c[2], c[3])
+        end
+    end
+    return true
+end
+
+-- 2) drainQueue
 local function drainQueue()
     local drained = 0
     while queueHead <= #pendingQueue and drained < DRAIN_PER_FRAME do
         local c = pendingQueue[queueHead]
-        local key = c[1]..","..c[2]..","..c[3]
-        inQueue[key] = nil
-
-        local probeRegion = Region3.new(
-            Vector3.new(c[1], c[2], c[3]),
-            Vector3.new(c[1] + CHUNK, c[2] + CHUNK, c[3] + CHUNK)
-        )
-        local ok, probe = pcall(function()
-            return terrain:ReadVoxelChannels(probeRegion, 8, {
-                "SolidMaterial", "LiquidOccupancy",
-            })
-        end)
-
-        if not ok then
-            queueHead = queueHead + 1
-            pendingQueue[#pendingQueue + 1] = c
-            inQueue[key] = true
-            drained = drained + 1
-        else
-            queueHead = queueHead + 1
-            drained = drained + 1
-
-            local hasContent = false
-            local pm, pw = probe.SolidMaterial, probe.LiquidOccupancy
-            if pm then
-                for xx = 1, #pm do
-                    local mx = pm[xx]
-                    if mx then
-                        for yy = 1, #mx do
-                            local my = mx[yy]
-                            if my then
-                                for zz = 1, #my do
-                                    if my[zz] ~= Enum.Material.Air then
-                                        hasContent = true
-                                        break
-                                    end
-                                end
-                                if hasContent then break end
-                            end
-                        end
-                        if hasContent then break end
-                    end
-                end
-            end
-            if not hasContent and pw then
-                for xx = 1, #pw do
-                    local mx = pw[xx]
-                    if mx then
-                        for yy = 1, #mx do
-                            local my = mx[yy]
-                            if my then
-                                for zz = 1, #my do
-                                    if (my[zz] or 0) > 0 then
-                                        hasContent = true
-                                        break
-                                    end
-                                end
-                                if hasContent then break end
-                            end
-                        end
-                        if hasContent then break end
-                    end
-                end
-            end
-
-            if hasContent then
-                local line = encodeChunk(c[1], c[2], c[3])
-                if line then
-                    savedChunks[key] = true
-                    addLine(line)
-                    totalChunksSaved = totalChunksSaved + 1
-                    spawnMarker(c[1], c[2], c[3])
-                end
-            else
-                savedChunks[key] = true
-            end
-        end
-
-        if drained >= DRAIN_PER_FRAME then break end
+        queueHead = queueHead + 1
+        drained = drained + 1
+        processChunk(c)
     end
 
     if queueHead > 1000 and queueHead > #pendingQueue / 2 then
@@ -450,11 +439,12 @@ local function drainQueue()
     end
 end
 
+-- 3) recordPartsAround (calls processFoundInstance)
 local function recordPartsAround(pos)
     if not CONFIG.VacuumParts then return end
 
     local exclude = { cacheFolder, terrain, markerFolder }
-    if player.Character then table.insert(exclude, player.Character) end
+    if player.Character then insert(exclude, player.Character) end
 
     local params = OverlapParams.new()
     params.FilterType = Enum.RaycastFilterType.Exclude
@@ -473,6 +463,7 @@ local function recordPartsAround(pos)
     end
 end
 
+-- 4) recordLoop (calls drainQueue AND recordPartsAround, so must be last)
 local function recordLoop()
     local lastPos = nil
     local lastNoclip = 0
@@ -612,7 +603,7 @@ local function updateLabels(ui)
     ui.partsLabel.Text   = "Parts: " .. totalPartsSaved
     ui.bufferLabel.Text  = "Buffer: " .. lineCount .. " lines"
     if totalBytesWritten > 1024 then
-        ui.bytesLabel.Text = string.format("Written: %.1f KB", totalBytesWritten / 1024)
+        ui.bytesLabel.Text = format("Written: %.1f KB", totalBytesWritten / 1024)
     else
         ui.bytesLabel.Text = "Written: " .. totalBytesWritten .. " B"
     end
@@ -674,4 +665,4 @@ ui.deleteBtn.MouseButton1Click:Connect(function()
     if hasTask then task.spawn(runDelete) else spawn(runDelete) end
 end)
 
-print("[MapSaver] Fly & Record loaded. Output: " .. fileName)
+print("[MapSaver] Fly & Record loaded. Output: " .. fileName.. (useNativeTerrain and " [NATIVE]" or " [FIU-fallback]"))
