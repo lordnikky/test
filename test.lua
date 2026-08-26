@@ -1,6 +1,12 @@
-print("isfile:", isfile("ussi_cache/API_DUMP.json"))
-local res = readfile("ussi_cache/API_DUMP.json")
-print("cache size:", #res)
-local d = game:GetService("HttpService"):JSONDecode(res)
-print("cache key:", next(d))
-print("expected key:", tostring(version()))
+local Params = {
+    RepoURL = "https://raw.githubusercontent.com/luau/UniversalSynSaveInstance/main/",
+    SSI = "saveinstance",
+}
+local synsaveinstance = loadstring(game:HttpGet(Params.RepoURL .. Params.SSI .. ".luau", true), Params.SSI)()
+local ok, err = xpcall(function()
+    synsaveinstance({})
+end, function(e)
+    return debug.traceback(e, 2)
+end)
+print("OK:", ok)
+print("ERR:", err)
