@@ -1,5 +1,5 @@
 local t = os.clock()
-local src = game:HttpGet("loadstring(game:HttpGet("https://raw.githubusercontent.com/lordnikky/test/refs/heads/main/test.lua"))()", true)
+local src = game:HttpGet("https://raw.githubusercontent.com/lordnikky/test/refs/heads/main/test.lua", true)
 local t2 = os.clock()
 local f = loadstring(src)
 local t3 = os.clock()
