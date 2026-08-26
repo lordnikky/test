@@ -1,36 +1,8 @@
-local Params = {
- RepoURL = "https://raw.githubusercontent.com/luau/UniversalSynSaveInstance/main/",
- SSI = "saveinstance",
-}
-local synsaveinstance = loadstring(game:HttpGet(Params.RepoURL .. Params.SSI .. ".luau", true), Params.SSI)()
-local Options = {
-    Workspace = true,
-    Lighting = true,
-    ReplicatedFirst = true,
-    ReplicatedStorage = true,
-    StarterGui = true,
-    StarterPack = true,
-    StarterPlayer = true,
-    Teams = true,
-    SoundService = true,
-    Chat = true,
-    LocalizationService = true,
-    TestService = true,
-    Terrain = true,
-    Players = true,
-    Decompile = true,              -- MUST be true
-    DecompileTimeout = 10,
-    DecompileJobless = false,
-    SaveBytecode = false,
-    SaveNonCreatable = true,
-    SaveNotArchivable = true,
-    NilInstances = true,
-    IgnoreDefaultProperties = false,
-    SaveAssets = true,
-    SafeMode = true,
-    MaxThreads = 128,
-    ShowStatus = true,
-    Binary = true,
-    mode = "optimized",
-}
-synsaveinstance(Options)
+local t = os.clock()
+local src = game:HttpGet("YOUR_MAPSAVER_URL", true)
+local t2 = os.clock()
+local f = loadstring(src)
+local t3 = os.clock()
+f()
+local t4 = os.clock()
+print("http: " .. math.floor((t2-t)*1000) .. "ms | loadstring(compile+deserialize): " .. math.floor((t3-t2)*1000) .. "ms | run: " .. math.floor((t4-t3)*1000) .. "ms")
