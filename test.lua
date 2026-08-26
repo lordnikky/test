@@ -363,11 +363,11 @@ local function drainQueue()
         inQueue[key] = nil
 
         local probeRegion = Region3.new(
-            Vector3.new(c[1]+CHUNK/2, c[2]+CHUNK/2, c[3]+CHUNK/2),
-            Vector3.new(c[1]+CHUNK/2+4, c[2]+CHUNK/2+4, c[3]+CHUNK/2+4)
+            Vector3.new(c[1], c[2], c[3]),
+            Vector3.new(c[1] + CHUNK, c[2] + CHUNK, c[3] + CHUNK)
         )
         local ok, probe = pcall(function()
-            return terrain:ReadVoxelChannels(probeRegion, 4, {
+            return terrain:ReadVoxelChannels(probeRegion, 8, {
                 "SolidMaterial", "LiquidOccupancy",
             })
         end)
