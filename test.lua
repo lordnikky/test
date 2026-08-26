@@ -24,7 +24,7 @@ local CHUNK           = CONFIG.ChunkSize
 local VOXELS_PER_AXIS = CHUNK / 4
 local GRAB_HALF       = 384
 local SAMPLE_STEP     = 128
-local DRAIN_PER_FRAME = 32
+local DRAIN_PER_FRAME = 12
 local MAX_QUEUE       = 40000
 local MAX_RETRIES     = 5
 
@@ -340,7 +340,6 @@ local function clearChunk(x, y, z)
     end)
 end
 
--- 1) spawnMarker
 local function spawnMarker(x, y, z)
     if not markerFolder then return end
     local marker = Instance.new("Part")
@@ -356,7 +355,6 @@ local function spawnMarker(x, y, z)
     marker.Parent = markerFolder
 end
 
--- 2) drainQueue (calls spawnMarker)
 local function drainQueue()
     local drained = 0
     while queueHead <= #pendingQueue and drained < DRAIN_PER_FRAME do
@@ -368,7 +366,12 @@ local function drainQueue()
             Vector3.new(c[1]+CHUNK/2, c[2]+CHUNK/2, c[3]+CHUNK/2),
             Vector3.new(c[1]+CHUNK/2+4, c[2]+CHUNK/2+4, c[3]+CHUNK/2+4)
         )
-        local ok = pcall(function() return terrain:ReadVoxels(probeRegion, 4) end)
+        local ok, probe = pcall(function()
+            return terrain:ReadVoxelChannels(probeRegion, 4, {
+                "SolidMaterial", "LiquidOccupancy",
+            })
+        end)
+
         if not ok then
             queueHead = queueHead + 1
             pendingQueue[#pendingQueue + 1] = c
@@ -377,15 +380,63 @@ local function drainQueue()
         else
             queueHead = queueHead + 1
             drained = drained + 1
-            local line = encodeChunk(c[1], c[2], c[3])
-            if line then
+
+            local hasContent = false
+            local pm, pw = probe.SolidMaterial, probe.LiquidOccupancy
+            if pm then
+                for xx = 1, #pm do
+                    local mx = pm[xx]
+                    if mx then
+                        for yy = 1, #mx do
+                            local my = mx[yy]
+                            if my then
+                                for zz = 1, #my do
+                                    if my[zz] ~= Enum.Material.Air then
+                                        hasContent = true
+                                        break
+                                    end
+                                end
+                                if hasContent then break end
+                            end
+                        end
+                        if hasContent then break end
+                    end
+                end
+            end
+            if not hasContent and pw then
+                for xx = 1, #pw do
+                    local mx = pw[xx]
+                    if mx then
+                        for yy = 1, #mx do
+                            local my = mx[yy]
+                            if my then
+                                for zz = 1, #my do
+                                    if (my[zz] or 0) > 0 then
+                                        hasContent = true
+                                        break
+                                    end
+                                end
+                                if hasContent then break end
+                            end
+                        end
+                        if hasContent then break end
+                    end
+                end
+            end
+
+            if hasContent then
+                local line = encodeChunk(c[1], c[2], c[3])
+                if line then
+                    savedChunks[key] = true
+                    addLine(line)
+                    totalChunksSaved = totalChunksSaved + 1
+                    spawnMarker(c[1], c[2], c[3])
+                end
+            else
                 savedChunks[key] = true
-                addLine(line)
-                totalChunksSaved = totalChunksSaved + 1
-                retryCount[key] = nil
-                spawnMarker(c[1], c[2], c[3])
             end
         end
+
         if drained >= DRAIN_PER_FRAME then break end
     end
 
@@ -399,7 +450,6 @@ local function drainQueue()
     end
 end
 
--- 3) recordPartsAround (calls processFoundInstance)
 local function recordPartsAround(pos)
     if not CONFIG.VacuumParts then return end
 
@@ -423,7 +473,6 @@ local function recordPartsAround(pos)
     end
 end
 
--- 4) recordLoop (calls drainQueue AND recordPartsAround, so must be last)
 local function recordLoop()
     local lastPos = nil
     local lastNoclip = 0
